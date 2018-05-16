@@ -5,11 +5,40 @@ import re
 class Re_RentalsSpider(Spider):
 	name 		 = 'Re_RentalsSpider'
 	allowed_urls = ['https://www.rentals.com/']
-	start_urls 	 = ['https://www.rentals.com/New-York/New-York/?page=1']
+	#start_urls 	 = ['https://www.rentals.com/New-York/New-York/?page=1']
+	start_urls 	 = ['https://www.rentals.com/Locations']
 
 	def parse(self, response):
-		result_urls = ['https://www.rentals.com/New-York/New-York/?page={}&per_page=30'.format(x) for x in range (1, 3)]
-		#result_urls = ['https://www.rentals.com/New-York/New-York/?page={}&per_page=1000'.format(x) for x in range (1, 9)]
+		states_rows  = response.xpath('//ul[@class="search_locations_states"]/li')
+		state_urls 	 = []
+		for i in range(0, len(states_rows)):
+			state = states_rows[i].xpath('./a/@href').extract_first()
+			state_urls = state_urls + ['https://www.rentals.com'+state]
+
+		for url in state_urls:
+			yield Request(url=url, callback=self.parse_state_page)
+
+	def parse_state_page(self, response):
+		cities_rows = response.xpath('.//ul[@class="home_rent_apt"]/li')
+		cities_urls = []
+		for i in range(0, len(cities_rows)):
+			city = cities_rows[i].xpath('./a/@href').extract_first()
+			cities_urls = cities_urls + ['https://www.rentals.com'+city]
+
+		for url in cities_urls:
+			yield Request(url=url, callback=self.parse_cities_page)
+
+	def parse_cities_page(self, response):
+		try:
+			pages = int(response.xpath('.//div[@class="pagination-heading-text"]/text()').extract_first().split(" ")[3])
+		except IndexError:
+			pages = 0
+
+		if pages > 0:
+			result_urls = [response.url+'?page={}&per_page=30'.format(x) for x in range (1, pages+1)]
+		else:
+			result_urls = [response.url+'?page=1&per_page=30']
+
 		for url in result_urls:
 			yield Request(url=url, callback=self.parse_result_page)
 
@@ -24,7 +53,11 @@ class Re_RentalsSpider(Spider):
 				price 	= page_rows[i].xpath('.//div[1]/div/strong/text()').extract_first()
 				bedroom = page_rows[i].xpath('.//div[1]/p/text()').extract_first().split('/')[0]
 				bathroom= page_rows[i].xpath('.//div[1]/p/text()').extract_first().split('/')[1]
-				zipcode = page_rows[i].xpath('.//div[1]/h5/text()').extract_first().split(' ')[3]
+				try:
+					zipcode = page_rows[1].xpath('.//div[1]/h5/text()').extract_first().split(',')[1].split(' ')[2]
+				except IndexError:
+					zipcode = 0
+
 				address = page_rows[i].xpath('./div[1]/a/@title').extract_first()
 				
 				item=ReRentalsItem()
